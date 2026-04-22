@@ -27,6 +27,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ── Health Check & Welcome ──────────────────────────────────────────────────
+@app.get("/")
+def root():
+    return {"message": "SmartMeter OCR API is running 🚀", "status": "online"}
+
+
+@app.get("/health")
+def health():
+    return {"status": "ok", "service": "SmartMeter OCR API"}
+
+
 # ── OCR prompt ────────────────────────────────────────────────────────────────
 METER_PROMPT = """You are reading a water meter dial.
 
