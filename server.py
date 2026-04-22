@@ -15,7 +15,9 @@ from dotenv import load_dotenv
 # ── Load environment variables ────────────────────────────────────────────────
 load_dotenv()
 API_KEY = os.getenv("OPENAI_API_KEY")
-client = OpenAI(api_key=API_KEY)
+
+# Create client safely (prevents startup crash if ENV is missing)
+client = OpenAI(api_key=API_KEY) if API_KEY else None
 
 # ── FastAPI app ───────────────────────────────────────────────────────────────
 app = FastAPI(title="SmartMeter OCR API", version="1.0.0")
@@ -61,6 +63,9 @@ async def upload_image(file: UploadFile = File(...)):
     Accept an image file, send to GPT-4o Vision, return extracted meter digits.
     Response: { "meter": "12345" }
     """
+    if not client:
+        raise HTTPException(status_code=500, detail="OpenAI API key not configured on server. Please check Render Environment variables.")
+
     # Validate content type
     if not file.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="File must be an image.")
