@@ -1,7 +1,7 @@
 'use strict';
 
 // ─── CONFIG ───────────────────────────────────────────────────────────────────
-const BACKEND_URL = 'http://localhost:8000';
+const BACKEND_URL = 'https://waterrrrrr.onrender.com';
 
 // ─── DATA STORE ───────────────────────────────────────────────────────────────
 const DB_KEY = 'smartmeter_records';
@@ -150,6 +150,7 @@ async function uploadAndOcr(blob) {
 
         if (!res.ok) {
             const err = await res.json().catch(() => ({}));
+            console.error("API Error Status:", res.status, err);
             throw new Error(err.detail || `HTTP ${res.status}`);
         }
 
@@ -164,6 +165,7 @@ async function uploadAndOcr(blob) {
             document.getElementById('f-reading').value = data.meter;
         }
     } catch (e) {
+        console.error("DEBUG OCR ERROR:", e);
         display.classList.remove('loading');
         display.textContent = '--';
         if (e.message.toLowerCase().includes('fetch') || e.message.toLowerCase().includes('failed')) {

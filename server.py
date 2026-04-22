@@ -24,8 +24,14 @@ app = FastAPI(title="SmartMeter OCR API", version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],          # allow any origin (frontend on any port)
-    allow_methods=["POST", "GET"],
+    allow_origins=[
+        "https://waterrrrrr.vercel.app",
+        "http://localhost:3000",
+        "http://localhost:8765",
+        "*"
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
     allow_headers=["*"],
 )
 
