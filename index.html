@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="th">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
+    <title>SmartMeter Web App</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link
+        href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;700&family=Google+Sans+Text:wght@400;500&display=swap"
+        rel="stylesheet" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <link rel="stylesheet" href="style.css" />
+</head>
+
+<body>
+
+    <!-- SCREEN 1: HOME -->
+    <div id="screen-home" class="screen active">
+        <div class="app-header">
+            <div class="app-logo">
+                <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+                    <circle cx="16" cy="16" r="16" fill="#3B82F6" opacity=".12" />
+                    <path
+                        d="M16 7c-4.97 0-9 4.03-9 9 0 2.76 1.24 5.23 3.2 6.9L16 25l5.8-2.1A8.97 8.97 0 0025 16c0-4.97-4.03-9-9-9z"
+                        fill="#3B82F6" />
+                    <circle cx="16" cy="16" r="4" fill="white" />
+                </svg>
+            </div>
+            <div>
+                <h1 class="app-title">SmartMeter</h1>
+                <p class="app-subtitle">ระบบบันทึกมิเตอร์น้ำอัจฉริยะ</p>
+            </div>
+        </div>
+        <div class="home-summary-card">
+            <div class="summary-item"><span class="summary-num" id="home-today-count">0</span><span
+                    class="summary-label">บันทึกวันนี้</span></div>
+            <div class="summary-divider"></div>
+            <div class="summary-item"><span class="summary-num" id="home-abnormal-count">0</span><span
+                    class="summary-label">ผิดปกติ</span></div>
+            <div class="summary-divider"></div>
+            <div class="summary-item"><span class="summary-num" id="home-total-count">0</span><span
+                    class="summary-label">ทั้งหมด</span></div>
+        </div>
+        <div class="home-actions">
+            <button class="btn-primary btn-xl" onclick="goTo('screen-camera')">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                    <path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z" stroke="white"
+                        stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                    <circle cx="12" cy="13" r="4" stroke="white" stroke-width="2" />
+                </svg>
+                ถ่ายรูปมิเตอร์
+            </button>
+            <button class="btn-secondary btn-xl" onclick="goTo('screen-dashboard')">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                    <rect x="3" y="3" width="7" height="7" rx="1" stroke="#3B82F6" stroke-width="2" />
+                    <rect x="14" y="3" width="7" height="7" rx="1" stroke="#3B82F6" stroke-width="2" />
+                    <rect x="3" y="14" width="7" height="7" rx="1" stroke="#3B82F6" stroke-width="2" />
+                    <rect x="14" y="14" width="7" height="7" rx="1" stroke="#3B82F6" stroke-width="2" />
+                </svg>
+                ไปที่ Dashboard
+            </button>
+        </div>
+        <div class="home-tip">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                <circle cx="12" cy="12" r="10" stroke="#3B82F6" stroke-width="2" />
+                <path d="M12 16v-4M12 8h.01" stroke="#3B82F6" stroke-width="2" stroke-linecap="round" />
+            </svg>
+            <span>ถ่ายรูปให้เห็นตัวเลขชัดเจน ระบบ AI จะอ่านค่าให้อัตโนมัติ</span>
+        </div>
+    </div>
+
+    <!-- SCREEN 2: CAMERA -->
+    <div id="screen-camera" class="screen">
+        <div class="nav-bar">
+            <button class="nav-back" onclick="goTo('screen-home')"><svg width="20" height="20" viewBox="0 0 24 24"
+                    fill="none">
+                    <path d="M19 12H5M12 5l-7 7 7 7" stroke="#1E293B" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round" />
+                </svg></button>
+            <span class="nav-title">ถ่ายรูปมิเตอร์</span>
+            <div style="width:36px"></div>
+        </div>
+        <div class="camera-area">
+            <div class="camera-instruction">ถ่ายรูปมิเตอร์ให้ชัดเจน</div>
+            <div class="camera-viewfinder" id="camera-viewfinder">
+                <video id="camera-video" autoplay playsinline muted></video>
+                <div class="viewfinder-frame">
+                    <div class="corner tl"></div>
+                    <div class="corner tr"></div>
+                    <div class="corner bl"></div>
+                    <div class="corner br"></div>
+                    <div class="frame-label">จัดให้หน้าปัดมิเตอร์อยู่ในกรอบ</div>
+                </div>
+                <canvas id="camera-canvas" style="display:none"></canvas>
+            </div>
+        </div>
+        <div class="camera-controls">
+            <label class="btn-gallery">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+                    <rect x="3" y="3" width="18" height="18" rx="2" stroke="#94A3B8" stroke-width="2" />
+                    <circle cx="8.5" cy="8.5" r="1.5" fill="#94A3B8" />
+                    <path d="M21 15l-5-5L5 21" stroke="#94A3B8" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round" />
+                </svg>
+                <span>แกลเลอรี</span>
+                <input type="file" accept="image/*" id="gallery-input" style="display:none"
+                    onchange="handleGalleryImage(event)" />
+            </label>
+            <button class="btn-capture" id="btn-capture" onclick="capturePhoto()">
+                <div class="capture-inner"></div>
+            </button>
+            <button class="btn-icon-action" onclick="switchCamera()">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+                    <path d="M1 4v6h6M23 20v-6h-6" stroke="#94A3B8" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round" />
+                    <path d="M20.49 9A9 9 0 005.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 013.51 15" stroke="#94A3B8"
+                        stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+            </button>
+        </div>
+        <p class="camera-hint">กดปุ่มกลมเพื่อถ่ายรูป หรือเลือกรูปจากแกลเลอรี</p>
+    </div>
+
+    <!-- SCREEN 3: OCR REVIEW -->
+    <div id="screen-ocr" class="screen">
+        <div class="nav-bar">
+            <button class="nav-back" onclick="goTo('screen-camera')"><svg width="20" height="20" viewBox="0 0 24 24"
+                    fill="none">
+                    <path d="M19 12H5M12 5l-7 7 7 7" stroke="#1E293B" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round" />
+                </svg></button>
+            <span class="nav-title">ตรวจสอบข้อมูล</span>
+            <div style="width:36px"></div>
+        </div>
+        <div class="ocr-content">
+            <div class="ocr-image-card">
+                <img id="ocr-preview" src="" alt="รูปมิเตอร์" class="ocr-img" style="display:none" />
+                <button class="retake-btn" onclick="goTo('screen-camera')">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                        <path d="M1 4v6h6M23 20v-6h-6" stroke="white" stroke-width="2.5" stroke-linecap="round"
+                            stroke-linejoin="round" />
+                    </svg>
+                    ถ่ายใหม่
+                </button>
+            </div>
+            <div class="ocr-reading-card">
+                <div class="ocr-badge">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                        <circle cx="12" cy="12" r="10" stroke="#3B82F6" stroke-width="2" />
+                        <path d="M9.09 9a3 3 0 115.83 1c0 2-3 3-3 3" stroke="#3B82F6" stroke-width="2"
+                            stroke-linecap="round" />
+                        <circle cx="12" cy="17" r=".5" fill="#3B82F6" stroke="#3B82F6" />
+                    </svg>
+                    ระบบอ่านค่าอัตโนมัติ (AI)
+                </div>
+                <div class="ocr-reading-display">
+                    <span class="ocr-reading-num" id="ocr-reading-text">--</span>
+                    <span class="ocr-unit">หน่วย</span>
+                </div>
+            </div>
+            <div class="form-card">
+                <div class="form-group">
+                    <label class="form-label required">เลขมิเตอร์</label>
+                    <input type="text" id="f-meter-id" class="form-input" placeholder="เช่น W-2401-001"
+                        inputmode="text" />
+                </div>
+                <div class="form-group">
+                    <label class="form-label required">ค่าที่อ่านได้ (หน่วย)</label>
+                    <input type="number" id="f-reading" class="form-input input-reading" placeholder="0"
+                        inputmode="decimal" />
+                </div>
+                <div class="form-row">
+                    <div class="form-group half">
+                        <label class="form-label">วันที่</label>
+                        <input type="text" id="f-date" class="form-input" readonly />
+                    </div>
+                    <div class="form-group half">
+                        <label class="form-label">ผู้บันทึก</label>
+                        <select id="f-inspector" class="form-input form-select">
+                            <option>สมชาย ใจดี</option>
+                            <option>วิชัย รักงาน</option>
+                            <option>นิรันดร์ ขยัน</option>
+                            <option>สุภา มั่นคง</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">หมายเหตุ</label>
+                    <textarea id="f-notes" class="form-input form-textarea" placeholder="หมายเหตุเพิ่มเติม (ถ้ามี)"
+                        rows="2"></textarea>
+                </div>
+            </div>
+            <div class="form-card">
+                <label class="section-label required">สภาพมิเตอร์</label>
+                <div class="chip-grid" id="condition-chips">
+                    <button class="chip" data-value="สภาพปกติ" onclick="selectChip(this,'condition')">สภาพปกติ</button>
+                    <button class="chip" data-value="หน้าปัดแตก"
+                        onclick="selectChip(this,'condition')">หน้าปัดแตก</button>
+                    <button class="chip" data-value="น้ำรั่ว" onclick="selectChip(this,'condition')">น้ำรั่ว</button>
+                    <button class="chip" data-value="ตัวเลขมองไม่ชัด"
+                        onclick="selectChip(this,'condition')">ตัวเลขมองไม่ชัด</button>
+                    <button class="chip" data-value="ฝาครอบชำรุด"
+                        onclick="selectChip(this,'condition')">ฝาครอบชำรุด</button>
+                    <button class="chip" data-value="อื่น ๆ" onclick="selectChip(this,'condition')">อื่น ๆ</button>
+                </div>
+            </div>
+            <div class="form-card">
+                <label class="section-label required">ช่วงเวลา</label>
+                <div class="period-grid">
+                    <button class="period-btn" data-value="รอบเช้า" onclick="selectPeriod(this)">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                            <circle cx="12" cy="12" r="5" stroke="#F59E0B" stroke-width="2" />
+                            <path
+                                d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"
+                                stroke="#F59E0B" stroke-width="2" stroke-linecap="round" />
+                        </svg>
+                        รอบเช้า
+                    </button>
+                    <button class="period-btn" data-value="รอบเย็น" onclick="selectPeriod(this)">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                            <path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z" stroke="#6366F1" stroke-width="2"
+                                stroke-linecap="round" stroke-linejoin="round" />
+                        </svg>
+                        รอบเย็น
+                    </button>
+                </div>
+            </div>
+            <div id="save-error" class="save-error" style="display:none">⚠️ กรุณาเลือกสภาพมิเตอร์และช่วงเวลาก่อนบันทึก
+            </div>
+            <button class="btn-primary btn-xl btn-save" onclick="saveRecord()">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                    <path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z" stroke="white"
+                        stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                    <polyline points="17 21 17 13 7 13 7 21" stroke="white" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round" />
+                    <polyline points="7 3 7 8 15 8" stroke="white" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round" />
+                </svg>
+                บันทึกข้อมูล
+            </button>
+            <div style="height:24px"></div>
+        </div>
+    </div>
+
+    <!-- SCREEN 4: SUCCESS -->
+    <div id="screen-success" class="screen">
+        <div class="success-wrap">
+            <div class="success-icon">
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none">
+                    <circle cx="12" cy="12" r="10" fill="#22C55E" opacity=".12" />
+                    <circle cx="12" cy="12" r="10" stroke="#22C55E" stroke-width="2" />
+                    <path d="M8 12l3 3 5-5" stroke="#22C55E" stroke-width="2.5" stroke-linecap="round"
+                        stroke-linejoin="round" />
+                </svg>
+            </div>
+            <h2 class="success-title">บันทึกข้อมูลเรียบร้อยแล้ว</h2>
+            <p class="success-sub">ข้อมูลมิเตอร์ถูกบันทึกเข้าระบบแล้ว</p>
+            <div class="success-card" id="success-summary"></div>
+            <div class="success-actions">
+                <button class="btn-primary btn-xl" onclick="goTo('screen-dashboard')">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                        <rect x="3" y="3" width="7" height="7" rx="1" stroke="white" stroke-width="2" />
+                        <rect x="14" y="3" width="7" height="7" rx="1" stroke="white" stroke-width="2" />
+                        <rect x="3" y="14" width="7" height="7" rx="1" stroke="white" stroke-width="2" />
+                        <rect x="14" y="14" width="7" height="7" rx="1" stroke="white" stroke-width="2" />
+                    </svg>
+                    ไปที่ Dashboard
+                </button>
+                <button class="btn-secondary btn-xl" onclick="startNewScan()">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                        <path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"
+                            stroke="#3B82F6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                        <circle cx="12" cy="13" r="4" stroke="#3B82F6" stroke-width="2" />
+                    </svg>
+                    สแกนมิเตอร์ถัดไป
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- SCREEN 5: DASHBOARD -->
+    <div id="screen-dashboard" class="screen">
+        <div class="nav-bar">
+            <button class="nav-back" onclick="goTo('screen-home')"><svg width="20" height="20" viewBox="0 0 24 24"
+                    fill="none">
+                    <path d="M19 12H5M12 5l-7 7 7 7" stroke="#1E293B" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round" />
+                </svg></button>
+            <span class="nav-title">Dashboard</span>
+            <button class="btn-export-sm" onclick="exportExcel()">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                    <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" stroke="#16A34A"
+                        stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+                Excel
+            </button>
+        </div>
+        <div class="dashboard-body">
+            <div class="stat-grid">
+                <div class="stat-card"><span class="stat-num" id="stat-total">0</span><span
+                        class="stat-label">ทั้งหมด</span></div>
+                <div class="stat-card"><span class="stat-num blue" id="stat-pending">0</span><span
+                        class="stat-label">รอตรวจสอบ</span></div>
+                <div class="stat-card"><span class="stat-num red" id="stat-abnormal">0</span><span
+                        class="stat-label">ผิดปกติ</span></div>
+                <div class="stat-card"><span class="stat-num green" id="stat-today">0</span><span
+                        class="stat-label">วันนี้</span></div>
+            </div>
+            <div class="filter-panel">
+                <div class="filter-row">
+                    <input type="text" id="filter-meter" class="filter-input" placeholder="🔍 เลขมิเตอร์..."
+                        oninput="applyFilters()" />
+                    <select id="filter-period" class="filter-input filter-select" onchange="applyFilters()">
+                        <option value="">ทุกช่วงเวลา</option>
+                        <option value="รอบเช้า">รอบเช้า</option>
+                        <option value="รอบเย็น">รอบเย็น</option>
+                    </select>
+                </div>
+                <div class="filter-row">
+                    <select id="filter-condition" class="filter-input filter-select" onchange="applyFilters()">
+                        <option value="">ทุกสภาพมิเตอร์</option>
+                        <option value="สภาพปกติ">สภาพปกติ</option>
+                        <option value="หน้าปัดแตก">หน้าปัดแตก</option>
+                        <option value="น้ำรั่ว">น้ำรั่ว</option>
+                        <option value="ตัวเลขมองไม่ชัด">ตัวเลขมองไม่ชัด</option>
+                        <option value="ฝาครอบชำรุด">ฝาครอบชำรุด</option>
+                        <option value="อื่น ๆ">อื่น ๆ</option>
+                    </select>
+                    <select id="filter-inspector" class="filter-input filter-select" onchange="applyFilters()">
+                        <option value="">ทุกผู้บันทึก</option>
+                        <option value="สมชาย ใจดี">สมชาย ใจดี</option>
+                        <option value="วิชัย รักงาน">วิชัย รักงาน</option>
+                        <option value="นิรันดร์ ขยัน">นิรันดร์ ขยัน</option>
+                        <option value="สุภา มั่นคง">สุภา มั่นคง</option>
+                    </select>
+                </div>
+            </div>
+            <div class="records-header">
+                <span id="records-count-label">กำลังโหลด...</span>
+                <button class="btn-clear-filter" onclick="clearFilters()">ล้างตัวกรอง</button>
+            </div>
+            <div id="records-list" class="records-list"></div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+
+</html>
