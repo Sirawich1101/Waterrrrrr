@@ -68,7 +68,7 @@
                 <circle cx="12" cy="12" r="10" stroke="#3B82F6" stroke-width="2" />
                 <path d="M12 16v-4M12 8h.01" stroke="#3B82F6" stroke-width="2" stroke-linecap="round" />
             </svg>
-            <span>ถ่ายรูปให้เห็นตัวเลขชัดเจน ระบบ AI จะอ่านค่าให้อัตโนมัติ</span>
+            <span>บันทึกข้อมูลมิเตอร์น้ำด้วยระบบ AI</span>
         </div>
     </div>
 
@@ -163,8 +163,8 @@
             </div>
             <div class="form-card">
                 <div class="form-group">
-                    <label class="form-label required">เลขมิเตอร์</label>
-                    <input type="text" id="f-meter-id" class="form-input" placeholder="เช่น W-2401-001"
+                    <label class="form-label">เลขมิเตอร์</label>
+                    <input type="text" id="f-meter-id" class="form-input" placeholder="เช่น W-2401-001 (ถ้ามี)"
                         inputmode="text" />
                 </div>
                 <div class="form-group">
@@ -191,6 +191,35 @@
                     <label class="form-label">หมายเหตุ</label>
                     <textarea id="f-notes" class="form-input form-textarea" placeholder="หมายเหตุเพิ่มเติม (ถ้ามี)"
                         rows="2"></textarea>
+                </div>
+            </div>
+            <div class="form-card">
+                <label class="section-label required">พื้นที่ / จุดติดตั้ง</label>
+                <div class="form-group">
+                    <select id="f-location-main" class="form-input form-select" onchange="onLocationMainChange()">
+                        <option value="">เลือกพื้นที่หลัก</option>
+                        <option value="อาคาร A">อาคาร A</option>
+                        <option value="อาคาร B">อาคาร B</option>
+                        <option value="อาคาร C">อาคาร C</option>
+                        <option value="อาคาร D">อาคาร D</option>
+                        <option value="อาคารหอประชุม / พื้นที่กิจกรรม">อาคารหอประชุม / พื้นที่กิจกรรม</option>
+                        <option value="ลานจอดรถ">ลานจอดรถ</option>
+                        <option value="พื้นที่ส่วนกลาง">พื้นที่ส่วนกลาง</option>
+                        <option value="ห้องระบบน้ำ / ห้องเครื่อง">ห้องระบบน้ำ / ห้องเครื่อง</option>
+                        <option value="อื่น ๆ">อื่น ๆ</option>
+                    </select>
+                </div>
+                <div class="form-group location-sub" id="location-floor-group" style="display:none">
+                    <select id="f-location-floor" class="form-input form-select">
+                        <option value="">เลือกชั้น</option>
+                        <option value="ชั้น 1">ชั้น 1</option>
+                        <option value="ชั้น 2">ชั้น 2</option>
+                        <option value="ชั้น 3">ชั้น 3</option>
+                        <option value="ชั้น 4">ชั้น 4</option>
+                    </select>
+                </div>
+                <div class="form-group location-sub" id="location-custom-group" style="display:none">
+                    <input type="text" id="f-location-custom" class="form-input" placeholder="ระบุพื้นที่อื่น ๆ" />
                 </div>
             </div>
             <div class="form-card">
@@ -320,6 +349,18 @@
                     </select>
                 </div>
                 <div class="filter-row">
+                    <select id="filter-location" class="filter-input filter-select" onchange="applyFilters()">
+                        <option value="">ทุกพื้นที่</option>
+                        <option value="อาคาร A">อาคาร A</option>
+                        <option value="อาคาร B">อาคาร B</option>
+                        <option value="อาคาร C">อาคาร C</option>
+                        <option value="อาคาร D">อาคาร D</option>
+                        <option value="อาคารหอประชุม / พื้นที่กิจกรรม">อาคารหอประชุม / พื้นที่กิจกรรม</option>
+                        <option value="ลานจอดรถ">ลานจอดรถ</option>
+                        <option value="พื้นที่ส่วนกลาง">พื้นที่ส่วนกลาง</option>
+                        <option value="ห้องระบบน้ำ / ห้องเครื่อง">ห้องระบบน้ำ / ห้องเครื่อง</option>
+                        <option value="อื่น ๆ">อื่น ๆ</option>
+                    </select>
                     <select id="filter-condition" class="filter-input filter-select" onchange="applyFilters()">
                         <option value="">ทุกสภาพมิเตอร์</option>
                         <option value="สภาพปกติ">สภาพปกติ</option>
@@ -329,6 +370,8 @@
                         <option value="ฝาครอบชำรุด">ฝาครอบชำรุด</option>
                         <option value="อื่น ๆ">อื่น ๆ</option>
                     </select>
+                </div>
+                <div class="filter-row">
                     <select id="filter-inspector" class="filter-input filter-select" onchange="applyFilters()">
                         <option value="">ทุกผู้บันทึก</option>
                         <option value="สมชาย ใจดี">สมชาย ใจดี</option>

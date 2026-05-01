@@ -170,8 +170,36 @@ function setupOcrScreen() {
     selectedCondition = ''; selectedPeriod = '';
     document.querySelectorAll('.chip').forEach(c => c.classList.remove('selected', 'warning'));
     document.querySelectorAll('.period-btn').forEach(b => b.classList.remove('selected'));
+    document.getElementById('f-location-main').value = '';
+    document.getElementById('f-location-floor').value = '';
+    document.getElementById('f-location-custom').value = '';
+    document.getElementById('location-floor-group').style.display = 'none';
+    document.getElementById('location-custom-group').style.display = 'none';
     document.getElementById('save-error').style.display = 'none';
     hideOcrToast();
+}
+
+// ─── LOCATION SELECTION ───────────────────────────────────────────────────────
+const BUILDING_OPTIONS = ['อาคาร A', 'อาคาร B', 'อาคาร C', 'อาคาร D'];
+function onLocationMainChange() {
+    const v = document.getElementById('f-location-main').value;
+    const floorG = document.getElementById('location-floor-group');
+    const customG = document.getElementById('location-custom-group');
+    floorG.style.display = BUILDING_OPTIONS.includes(v) ? 'block' : 'none';
+    customG.style.display = v === 'อื่น ๆ' ? 'block' : 'none';
+    if (!BUILDING_OPTIONS.includes(v)) document.getElementById('f-location-floor').value = '';
+    if (v !== 'อื่น ๆ') document.getElementById('f-location-custom').value = '';
+    document.getElementById('save-error').style.display = 'none';
+}
+function getLocationName() {
+    const main = document.getElementById('f-location-main').value;
+    if (!main) return '';
+    if (BUILDING_OPTIONS.includes(main)) {
+        const floor = document.getElementById('f-location-floor').value;
+        return floor ? `${main} - ${floor}` : '';
+    }
+    if (main === 'อื่น ๆ') return document.getElementById('f-location-custom').value.trim();
+    return main;
 }
 
 // ─── CHIP & PERIOD ────────────────────────────────────────────────────────────
@@ -203,8 +231,19 @@ function showGlobalToast(msg, type = 'error') {
 // ─── SAVE (Supabase) ──────────────────────────────────────────────────────────
 async function saveRecord() {
     const errEl = document.getElementById('save-error');
-    if (!selectedCondition || !selectedPeriod) {
-        errEl.style.display = 'block'; errEl.scrollIntoView({ behavior: 'smooth', block: 'center' }); return;
+    const meterId = document.getElementById('f-meter-id').value.trim();
+    const readingVal = document.getElementById('f-reading').value.trim();
+    const locationName = getLocationName();
+    const mainLoc = document.getElementById('f-location-main').value;
+    let errMsg = '';
+    if (!readingVal) errMsg = '⚠️ กรุณากรอกค่าที่อ่านได้';
+    else if (!mainLoc) errMsg = '⚠️ กรุณาเลือกพื้นที่ / จุดติดตั้ง';
+    else if (BUILDING_OPTIONS.includes(mainLoc) && !document.getElementById('f-location-floor').value) errMsg = '⚠️ กรุณาเลือกชั้น';
+    else if (mainLoc === 'อื่น ๆ' && !locationName) errMsg = '⚠️ กรุณาระบุพื้นที่อื่น ๆ';
+    else if (!selectedCondition) errMsg = '⚠️ กรุณาเลือกสภาพมิเตอร์';
+    else if (!selectedPeriod) errMsg = '⚠️ กรุณาเลือกช่วงเวลา';
+    if (errMsg) {
+        errEl.textContent = errMsg; errEl.style.display = 'block'; errEl.scrollIntoView({ behavior: 'smooth', block: 'center' }); return;
     }
 
     // Show loading state on save button
@@ -241,8 +280,8 @@ async function saveRecord() {
     // 2) Insert record into Supabase database
     const now = new Date();
     const record = {
-        meter_id: document.getElementById('f-meter-id').value.trim() || `W-${Date.now()}`,
-        reading_value: document.getElementById('f-reading').value.trim() || '--',
+        meter_id: meterId || '',
+        reading_value: readingVal || '--',
         image_url: imageUrl,
         meter_condition: selectedCondition,
         time_period: selectedPeriod,
@@ -251,6 +290,7 @@ async function saveRecord() {
         status: selectedCondition === 'สภาพปกติ' ? 'ตรวจสอบแล้ว' : 'รอตรวจสอบ',
         ai_raw_response: document.getElementById('ocr-reading-text').textContent || null,
         ai_confidence: null,
+        location_name: locationName,
         created_at: now.toISOString()
     };
 
@@ -289,8 +329,9 @@ function showSuccess(rec) {
     const condClass = rec.meter_condition === 'สภาพปกติ' ? 'record-condition-normal' : 'record-condition-warn';
     const dateDisplay = rec.recorded_at || new Date(rec.created_at).toLocaleString('th-TH', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
     document.getElementById('success-summary').innerHTML = `
-    <div class="success-row"><span class="success-row-label">เลขมิเตอร์</span><span class="success-row-val">${rec.meter_id}</span></div>
+    <div class="success-row"><span class="success-row-label">เลขมิเตอร์</span><span class="success-row-val">${rec.meter_id || '-'}</span></div>
     <div class="success-row"><span class="success-row-label">ค่าที่อ่านได้</span><span class="success-row-val">${rec.reading_value} หน่วย</span></div>
+    <div class="success-row"><span class="success-row-label">พื้นที่</span><span class="success-row-val">${rec.location_name || '-'}</span></div>
     <div class="success-row"><span class="success-row-label">สภาพมิเตอร์</span><span class="success-row-val ${condClass}">${rec.meter_condition}</span></div>
     <div class="success-row"><span class="success-row-label">ช่วงเวลา</span><span class="success-row-val">${rec.time_period}</span></div>
     <div class="success-row"><span class="success-row-label">ผู้บันทึก</span><span class="success-row-val">${rec.inspector_name}</span></div>
@@ -339,21 +380,30 @@ async function renderDashboard() {
     }
 }
 
+const KNOWN_LOCATIONS = ['อาคาร A','อาคาร B','อาคาร C','อาคาร D','อาคารหอประชุม / พื้นที่กิจกรรม','ลานจอดรถ','พื้นที่ส่วนกลาง','ห้องระบบน้ำ / ห้องเครื่อง'];
 function applyFilters() {
     const mQ = document.getElementById('filter-meter').value.trim().toLowerCase();
     const pQ = document.getElementById('filter-period').value;
     const cQ = document.getElementById('filter-condition').value;
     const iQ = document.getElementById('filter-inspector').value;
-    renderRecords(_dashboardRecords.filter(r =>
-        (!mQ || r.meter_id.toLowerCase().includes(mQ)) &&
-        (!pQ || r.time_period === pQ) &&
-        (!cQ || r.meter_condition === cQ) &&
-        (!iQ || r.inspector_name === iQ)
-    ));
+    const lQ = document.getElementById('filter-location').value;
+    renderRecords(_dashboardRecords.filter(r => {
+        if (mQ && !(r.meter_id || '').toLowerCase().includes(mQ)) return false;
+        if (pQ && r.time_period !== pQ) return false;
+        if (cQ && r.meter_condition !== cQ) return false;
+        if (iQ && r.inspector_name !== iQ) return false;
+        if (lQ) {
+            const loc = r.location_name || '';
+            if (['อาคาร A','อาคาร B','อาคาร C','อาคาร D'].includes(lQ)) { if (!loc.startsWith(lQ)) return false; }
+            else if (lQ === 'อื่น ๆ') { if (KNOWN_LOCATIONS.some(k => loc.startsWith(k))) return false; }
+            else { if (loc !== lQ) return false; }
+        }
+        return true;
+    }));
 }
 
 function clearFilters() {
-    ['filter-meter', 'filter-period', 'filter-condition', 'filter-inspector'].forEach(id => {
+    ['filter-meter', 'filter-period', 'filter-condition', 'filter-inspector', 'filter-location'].forEach(id => {
         const el = document.getElementById(id); if (el) el.value = '';
     });
     renderRecords(_dashboardRecords);
@@ -370,17 +420,16 @@ function renderRecords(records) {
         const dateStr = r.created_at ? new Date(r.created_at).toLocaleString('th-TH', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
         return `<div class="record-card">
       <div class="record-top">
-        <span class="record-meter-id">${r.meter_id}</span>
+        <span class="record-meter-id">${r.meter_id || '-'}</span>
         <div class="record-badges">
           <span class="badge ${pCls}">${r.time_period}</span>
           <span class="badge ${sCls}">${r.status}</span>
         </div>
       </div>
+      ${r.location_name ? `<div class="record-row"><span class="record-row-label">พื้นที่</span><span class="record-row-val">${r.location_name}</span></div>` : ''}
       <div class="record-row"><span class="record-row-label">ค่าที่อ่านได้</span><span class="record-row-val">${r.reading_value} หน่วย</span></div>
-      <div class="record-row"><span class="record-row-label">สภาพมิเตอร์</span><span class="record-row-val ${cCls}">${r.meter_condition}</span></div>
       <div class="record-row"><span class="record-row-label">ผู้บันทึก</span><span class="record-row-val">${r.inspector_name}</span></div>
       <div class="record-row"><span class="record-row-label">วันที่</span><span class="record-row-val">${dateStr}</span></div>
-      ${r.notes ? `<div class="record-row"><span class="record-row-label">หมายเหตุ</span><span class="record-row-val">${r.notes}</span></div>` : ''}
     </div>`;
     }).join('');
 }
@@ -400,7 +449,7 @@ async function exportExcel() {
         const iQ = document.getElementById('filter-inspector').value;
 
         let records = _dashboardRecords;
-        if (mQ) records = records.filter(r => r.meter_id.toLowerCase().includes(mQ));
+        if (mQ) records = records.filter(r => (r.meter_id || '').toLowerCase().includes(mQ));
         if (pQ) records = records.filter(r => r.time_period === pQ);
         if (cQ) records = records.filter(r => r.meter_condition === cQ);
         if (iQ) records = records.filter(r => r.inspector_name === iQ);
@@ -409,6 +458,7 @@ async function exportExcel() {
             'ลำดับ': i + 1,
             'เลขมิเตอร์': r.meter_id,
             'ค่าที่อ่านได้': r.reading_value,
+            'พื้นที่ / จุดติดตั้ง': r.location_name || '',
             'สภาพมิเตอร์': r.meter_condition,
             'ช่วงเวลา': r.time_period,
             'วันที่บันทึก': r.created_at ? new Date(r.created_at).toLocaleString('th-TH', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '',
@@ -419,7 +469,7 @@ async function exportExcel() {
         }));
         const wb = XLSX.utils.book_new();
         const ws = XLSX.utils.json_to_sheet(rows);
-        ws['!cols'] = [{ wch: 6 }, { wch: 16 }, { wch: 16 }, { wch: 20 }, { wch: 12 }, { wch: 22 }, { wch: 16 }, { wch: 24 }, { wch: 14 }, { wch: 40 }];
+        ws['!cols'] = [{ wch: 6 }, { wch: 16 }, { wch: 16 }, { wch: 24 }, { wch: 20 }, { wch: 12 }, { wch: 22 }, { wch: 16 }, { wch: 24 }, { wch: 14 }, { wch: 40 }];
         XLSX.utils.book_append_sheet(wb, ws, 'บันทึกมิเตอร์');
         XLSX.writeFile(wb, `SmartMeter_${new Date().toLocaleDateString('th-TH').replace(/\//g, '-')}.xlsx`);
     } catch (e) {

@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS meter_records (
     reading_value   TEXT,
     image_url       TEXT,
     meter_condition TEXT,
+    location_name   TEXT,
     time_period     TEXT,
     inspector_name  TEXT,
     notes           TEXT,
