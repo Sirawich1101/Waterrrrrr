@@ -3,45 +3,36 @@
 // ─── CONFIG ───────────────────────────────────────────────────────────────────
 const BACKEND_URL = 'https://waterrrrrr.onrender.com';
 
-// ─── DATA STORE ───────────────────────────────────────────────────────────────
-const DB_KEY = 'smartmeter_records';
-function loadRecords() {
-    try { return JSON.parse(localStorage.getItem(DB_KEY)) || []; }
-    catch { return []; }
-}
-function saveRecords(r) { localStorage.setItem(DB_KEY, JSON.stringify(r)); }
+// ─── SUPABASE CONFIG ──────────────────────────────────────────────────────────
+// Paste your Supabase project URL here (found in Settings → API)
+const SUPABASE_URL = "https://dqhyxprjdsxhikuojhpk.supabase.co";
+// Paste your Supabase PUBLISHABLE (anon) key here — this is safe to expose in frontend code.
+// ⚠️ NEVER paste service_role, sb_secret, database password, or JWT secret here!
+const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_AWEaIC1zGa2WRJuSg8WqfA_1_HzHZIT";
 
-function purgeDemoData() {
-    const records = loadRecords();
-    const realRecords = records.filter(r => !r.id.startsWith('rec_demo_'));
-    if (records.length !== realRecords.length) {
-        saveRecords(realRecords);
-    }
-}
+// Create the Supabase client using the CDN-provided global `supabase` object
+const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
 
 // ─── STATE ────────────────────────────────────────────────────────────────────
-let capturedImageURL = '';  // data URL for preview
-let capturedBlob = null;    // Blob for API upload
+let capturedImageURL = '';
+let capturedBlob = null;
 let selectedCondition = '';
 let selectedPeriod = '';
 let cameraStream = null;
 let facingMode = 'environment';
+// Cache dashboard records so filters work synchronously after initial load
+let _dashboardRecords = [];
 
 // ─── NAVIGATION ───────────────────────────────────────────────────────────────
 function goTo(screenId) {
     const current = document.querySelector('.screen.active');
     const next = document.getElementById(screenId);
     if (!next || next === current) return;
-
-    if (current) {
-        current.classList.remove('active');
-        current.style.display = '';
-    }
+    if (current) { current.classList.remove('active'); current.style.display = ''; }
     next.style.display = 'flex';
-    next.getBoundingClientRect(); // force reflow for transition
+    next.getBoundingClientRect();
     next.classList.add('active');
     next.scrollTop = 0;
-
     if (screenId === 'screen-home') { stopCamera(); updateHomeStats(); }
     else if (screenId === 'screen-camera') { startCamera(); }
     else if (screenId === 'screen-dashboard') { stopCamera(); renderDashboard(); }
@@ -49,13 +40,24 @@ function goTo(screenId) {
     else if (screenId === 'screen-success') { stopCamera(); }
 }
 
-// ─── HOME ─────────────────────────────────────────────────────────────────────
-function updateHomeStats() {
-    const records = loadRecords();
-    const todayStr = new Date().toLocaleDateString('th-TH', { year: 'numeric', month: '2-digit', day: '2-digit' });
-    document.getElementById('home-today-count').textContent = records.filter(r => r.recorded_date === todayStr).length;
-    document.getElementById('home-abnormal-count').textContent = records.filter(r => r.meter_condition !== 'สภาพปกติ').length;
-    document.getElementById('home-total-count').textContent = records.length;
+// ─── HOME STATS (Supabase) ────────────────────────────────────────────────────
+async function updateHomeStats() {
+    const els = { today: document.getElementById('home-today-count'), abnormal: document.getElementById('home-abnormal-count'), total: document.getElementById('home-total-count') };
+    Object.values(els).forEach(e => { e.textContent = '–'; });
+    try {
+        const todayISO = new Date().toISOString().slice(0, 10);
+        const [totalRes, abnormalRes, todayRes] = await Promise.all([
+            supabaseClient.from('meter_records').select('id', { count: 'exact', head: true }),
+            supabaseClient.from('meter_records').select('id', { count: 'exact', head: true }).neq('meter_condition', 'สภาพปกติ'),
+            supabaseClient.from('meter_records').select('id', { count: 'exact', head: true }).gte('created_at', todayISO + 'T00:00:00').lte('created_at', todayISO + 'T23:59:59')
+        ]);
+        els.total.textContent = totalRes.count ?? 0;
+        els.abnormal.textContent = abnormalRes.count ?? 0;
+        els.today.textContent = todayRes.count ?? 0;
+    } catch (e) {
+        console.error('updateHomeStats error:', e);
+        Object.values(els).forEach(el => { el.textContent = '0'; });
+    }
 }
 
 // ─── CAMERA ───────────────────────────────────────────────────────────────────
@@ -63,9 +65,7 @@ async function startCamera() {
     stopCamera();
     const video = document.getElementById('camera-video');
     try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-            video: { facingMode, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false
-        });
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false });
         cameraStream = stream;
         video.srcObject = stream;
     } catch {
@@ -86,31 +86,18 @@ function stopCamera() {
     document.getElementById('camera-video').srcObject = null;
 }
 
-function switchCamera() {
-    facingMode = facingMode === 'environment' ? 'user' : 'environment';
-    startCamera();
-}
+function switchCamera() { facingMode = facingMode === 'environment' ? 'user' : 'environment'; startCamera(); }
 
 function capturePhoto() {
     const video = document.getElementById('camera-video');
     const canvas = document.getElementById('camera-canvas');
     if (!cameraStream || !video.videoWidth) {
-        // No camera — navigate to OCR for manual entry
-        capturedImageURL = '';
-        capturedBlob = null;
-        goTo('screen-ocr');
-        uploadAndOcr(null);
-        return;
+        capturedImageURL = ''; capturedBlob = null; goTo('screen-ocr'); uploadAndOcr(null); return;
     }
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
+    canvas.width = video.videoWidth; canvas.height = video.videoHeight;
     canvas.getContext('2d').drawImage(video, 0, 0);
     capturedImageURL = canvas.toDataURL('image/jpeg', 0.9);
-    canvas.toBlob(blob => {
-        capturedBlob = blob;
-        goTo('screen-ocr');
-        uploadAndOcr(blob);
-    }, 'image/jpeg', 0.9);
+    canvas.toBlob(blob => { capturedBlob = blob; goTo('screen-ocr'); uploadAndOcr(blob); }, 'image/jpeg', 0.9);
 }
 
 function handleGalleryImage(event) {
@@ -118,45 +105,24 @@ function handleGalleryImage(event) {
     if (!file) return;
     capturedBlob = file;
     const reader = new FileReader();
-    reader.onload = e => {
-        capturedImageURL = e.target.result;
-        goTo('screen-ocr');
-        uploadAndOcr(file);
-    };
+    reader.onload = e => { capturedImageURL = e.target.result; goTo('screen-ocr'); uploadAndOcr(file); };
     reader.readAsDataURL(file);
-    // reset so same file can be re-selected
     event.target.value = '';
 }
 
 // ─── REAL OCR — FastAPI + OpenAI Vision ───────────────────────────────────────
 async function uploadAndOcr(blob) {
     const display = document.getElementById('ocr-reading-text');
-    display.classList.add('loading');
-    display.textContent = 'กำลังอ่าน...';
+    display.classList.add('loading'); display.textContent = 'กำลังอ่าน...';
     document.getElementById('f-reading').value = '';
     hideOcrToast();
-
-    if (!blob) {
-        display.classList.remove('loading');
-        display.textContent = '--';
-        return;
-    }
-
+    if (!blob) { display.classList.remove('loading'); display.textContent = '--'; return; }
     try {
-        const form = new FormData();
-        form.append('file', blob, 'meter.jpg');
-
+        const form = new FormData(); form.append('file', blob, 'meter.jpg');
         const res = await fetch(`${BACKEND_URL}/upload`, { method: 'POST', body: form });
-
-        if (!res.ok) {
-            const err = await res.json().catch(() => ({}));
-            console.error("API Error Status:", res.status, err);
-            throw new Error(err.detail || `HTTP ${res.status}`);
-        }
-
+        if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.detail || `HTTP ${res.status}`); }
         const data = await res.json();
         display.classList.remove('loading');
-
         if (!data.meter || data.meter === 'error') {
             display.textContent = '--';
             showOcrToast('AI อ่านค่าไม่ได้ — กรุณาพิมพ์เองหรือถ่ายใหม่');
@@ -166,61 +132,42 @@ async function uploadAndOcr(blob) {
         }
     } catch (e) {
         console.error("DEBUG OCR ERROR:", e);
-        display.classList.remove('loading');
-        display.textContent = '--';
+        display.classList.remove('loading'); display.textContent = '--';
         if (e.message.toLowerCase().includes('fetch') || e.message.toLowerCase().includes('failed')) {
             showOcrToast('ไม่สามารถเชื่อมต่อ AI ได้ — กรุณาพิมพ์ค่าเอง');
-        } else {
-            showOcrToast(`เกิดข้อผิดพลาด: ${e.message}`);
-        }
+        } else { showOcrToast(`เกิดข้อผิดพลาด: ${e.message}`); }
     }
 }
 
 function showOcrToast(msg) {
     let t = document.getElementById('ocr-toast');
-    if (!t) {
-        t = document.createElement('div');
-        t.id = 'ocr-toast';
-        t.className = 'ocr-toast';
-        document.querySelector('.ocr-reading-card').appendChild(t);
-    }
-    t.textContent = msg;
-    t.style.display = 'block';
+    if (!t) { t = document.createElement('div'); t.id = 'ocr-toast'; t.className = 'ocr-toast'; document.querySelector('.ocr-reading-card').appendChild(t); }
+    t.textContent = msg; t.style.display = 'block';
 }
-function hideOcrToast() {
-    const t = document.getElementById('ocr-toast');
-    if (t) t.style.display = 'none';
-}
+function hideOcrToast() { const t = document.getElementById('ocr-toast'); if (t) t.style.display = 'none'; }
 
 // ─── OCR SCREEN SETUP ─────────────────────────────────────────────────────────
 function setupOcrScreen() {
     const preview = document.getElementById('ocr-preview');
     const card = document.querySelector('.ocr-image-card');
     const ph = card.querySelector('.no-img-ph');
-
-    if (capturedImageURL) {
-        preview.src = capturedImageURL;
-        preview.style.display = 'block';
-        if (ph) ph.remove();
-    } else {
+    if (capturedImageURL) { preview.src = capturedImageURL; preview.style.display = 'block'; if (ph) ph.remove(); }
+    else {
         preview.style.display = 'none';
         if (!ph) {
-            const el = document.createElement('div');
-            el.className = 'no-img-ph';
+            const el = document.createElement('div'); el.className = 'no-img-ph';
             el.style.cssText = 'padding:40px;text-align:center;color:#64748B;font-size:14px;';
             el.innerHTML = '<svg width="40" height="40" viewBox="0 0 24 24" fill="none" style="margin:0 auto 8px;display:block"><rect x="3" y="3" width="18" height="18" rx="2" stroke="#CBD5E1" stroke-width="2"/><circle cx="8.5" cy="8.5" r="1.5" fill="#CBD5E1"/><path d="M21 15l-5-5L5 21" stroke="#CBD5E1" stroke-width="2" stroke-linecap="round"/></svg>ตัวอย่างรูปมิเตอร์';
             card.insertBefore(el, card.querySelector('.retake-btn'));
         }
     }
-
     document.getElementById('f-date').value = new Date().toLocaleDateString('th-TH', { year: 'numeric', month: '2-digit', day: '2-digit' });
     document.getElementById('f-meter-id').value = '';
     document.getElementById('f-reading').value = '';
     document.getElementById('f-notes').value = '';
     document.getElementById('ocr-reading-text').textContent = '--';
     document.getElementById('ocr-reading-text').classList.remove('loading');
-    selectedCondition = '';
-    selectedPeriod = '';
+    selectedCondition = ''; selectedPeriod = '';
     document.querySelectorAll('.chip').forEach(c => c.classList.remove('selected', 'warning'));
     document.querySelectorAll('.period-btn').forEach(b => b.classList.remove('selected'));
     document.getElementById('save-error').style.display = 'none';
@@ -229,7 +176,6 @@ function setupOcrScreen() {
 
 // ─── CHIP & PERIOD ────────────────────────────────────────────────────────────
 const WARN_CONDITIONS = ['หน้าปัดแตก', 'น้ำรั่ว', 'ตัวเลขมองไม่ชัด', 'ฝาครอบชำรุด', 'อื่น ๆ'];
-
 function selectChip(el, group) {
     if (group === 'condition') {
         document.querySelectorAll('#condition-chips .chip').forEach(c => c.classList.remove('selected', 'warning'));
@@ -239,72 +185,158 @@ function selectChip(el, group) {
     }
     document.getElementById('save-error').style.display = 'none';
 }
-
 function selectPeriod(el) {
     document.querySelectorAll('.period-btn').forEach(b => b.classList.remove('selected'));
-    el.classList.add('selected');
-    selectedPeriod = el.dataset.value;
+    el.classList.add('selected'); selectedPeriod = el.dataset.value;
     document.getElementById('save-error').style.display = 'none';
 }
 
-// ─── SAVE ─────────────────────────────────────────────────────────────────────
-function saveRecord() {
+// ─── GLOBAL TOAST ─────────────────────────────────────────────────────────────
+function showGlobalToast(msg, type = 'error') {
+    let t = document.getElementById('global-toast');
+    if (!t) { t = document.createElement('div'); t.id = 'global-toast'; document.body.appendChild(t); }
+    t.className = `global-toast global-toast-${type}`;
+    t.textContent = msg; t.style.display = 'block';
+    setTimeout(() => { t.style.display = 'none'; }, 5000);
+}
+
+// ─── SAVE (Supabase) ──────────────────────────────────────────────────────────
+async function saveRecord() {
     const errEl = document.getElementById('save-error');
     if (!selectedCondition || !selectedPeriod) {
-        errEl.style.display = 'block';
-        errEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        return;
+        errEl.style.display = 'block'; errEl.scrollIntoView({ behavior: 'smooth', block: 'center' }); return;
     }
+
+    // Show loading state on save button
+    const saveBtn = document.querySelector('.btn-save');
+    const origHTML = saveBtn.innerHTML;
+    saveBtn.disabled = true;
+    saveBtn.innerHTML = '<span class="save-spinner"></span> กำลังบันทึก...';
+
+    let imageUrl = '';
+    let imageWarning = false;
+
+    // 1) Upload image to Supabase Storage
+    if (capturedBlob) {
+        try {
+            const fileName = `meter_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.jpg`;
+            const { data: uploadData, error: uploadError } = await supabaseClient.storage
+                .from('meter-images')
+                .upload(fileName, capturedBlob, { contentType: 'image/jpeg', upsert: false });
+
+            if (uploadError) throw uploadError;
+
+            // Get the public URL for the uploaded image
+            const { data: urlData } = supabaseClient.storage
+                .from('meter-images')
+                .getPublicUrl(uploadData.path);
+            imageUrl = urlData.publicUrl;
+        } catch (e) {
+            console.error('Image upload failed:', e);
+            imageWarning = true;
+            // Continue saving without image — show warning later
+        }
+    }
+
+    // 2) Insert record into Supabase database
     const now = new Date();
     const record = {
-        id: `rec_${Date.now()}`,
         meter_id: document.getElementById('f-meter-id').value.trim() || `W-${Date.now()}`,
         reading_value: document.getElementById('f-reading').value.trim() || '--',
-        image_url: capturedImageURL || '',
+        image_url: imageUrl,
         meter_condition: selectedCondition,
         time_period: selectedPeriod,
-        recorded_at: now.toLocaleString('th-TH', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }),
-        recorded_date: now.toLocaleDateString('th-TH', { year: 'numeric', month: '2-digit', day: '2-digit' }),
         inspector_name: document.getElementById('f-inspector').value,
         notes: document.getElementById('f-notes').value.trim(),
-        status: selectedCondition === 'สภาพปกติ' ? 'ตรวจสอบแล้ว' : 'รอตรวจสอบ'
+        status: selectedCondition === 'สภาพปกติ' ? 'ตรวจสอบแล้ว' : 'รอตรวจสอบ',
+        ai_raw_response: document.getElementById('ocr-reading-text').textContent || null,
+        ai_confidence: null,
+        created_at: now.toISOString()
     };
-    const records = loadRecords();
-    records.unshift(record);
-    saveRecords(records);
-    showSuccess(record);
+
+    try {
+        const { data, error } = await supabaseClient
+            .from('meter_records')
+            .insert(record)
+            .select()
+            .single();
+
+        if (error) throw error;
+
+        // Restore save button
+        saveBtn.disabled = false;
+        saveBtn.innerHTML = origHTML;
+
+        if (imageWarning) {
+            showGlobalToast('⚠️ อัปโหลดรูปไม่สำเร็จ แต่ข้อมูลถูกบันทึกแล้ว', 'warning');
+        }
+
+        // Show success with formatted dates for display
+        showSuccess({
+            ...data,
+            recorded_at: now.toLocaleString('th-TH', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+        });
+    } catch (e) {
+        console.error('Database insert failed:', e);
+        saveBtn.disabled = false;
+        saveBtn.innerHTML = origHTML;
+        showGlobalToast('❌ บันทึกข้อมูลไม่สำเร็จ — กรุณาลองใหม่อีกครั้ง');
+    }
 }
 
 // ─── SUCCESS ──────────────────────────────────────────────────────────────────
 function showSuccess(rec) {
     const condClass = rec.meter_condition === 'สภาพปกติ' ? 'record-condition-normal' : 'record-condition-warn';
+    const dateDisplay = rec.recorded_at || new Date(rec.created_at).toLocaleString('th-TH', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
     document.getElementById('success-summary').innerHTML = `
     <div class="success-row"><span class="success-row-label">เลขมิเตอร์</span><span class="success-row-val">${rec.meter_id}</span></div>
     <div class="success-row"><span class="success-row-label">ค่าที่อ่านได้</span><span class="success-row-val">${rec.reading_value} หน่วย</span></div>
     <div class="success-row"><span class="success-row-label">สภาพมิเตอร์</span><span class="success-row-val ${condClass}">${rec.meter_condition}</span></div>
     <div class="success-row"><span class="success-row-label">ช่วงเวลา</span><span class="success-row-val">${rec.time_period}</span></div>
     <div class="success-row"><span class="success-row-label">ผู้บันทึก</span><span class="success-row-val">${rec.inspector_name}</span></div>
-    <div class="success-row"><span class="success-row-label">วันที่</span><span class="success-row-val">${rec.recorded_at}</span></div>`;
+    <div class="success-row"><span class="success-row-label">วันที่</span><span class="success-row-val">${dateDisplay}</span></div>`;
     goTo('screen-success');
 }
 
 function startNewScan() {
-    capturedImageURL = '';
-    capturedBlob = null;
-    selectedCondition = '';
-    selectedPeriod = '';
+    capturedImageURL = ''; capturedBlob = null; selectedCondition = ''; selectedPeriod = '';
     goTo('screen-camera');
 }
 
-// ─── DASHBOARD ────────────────────────────────────────────────────────────────
-function renderDashboard() {
-    const records = loadRecords();
-    const todayStr = new Date().toLocaleDateString('th-TH', { year: 'numeric', month: '2-digit', day: '2-digit' });
-    document.getElementById('stat-total').textContent = records.length;
-    document.getElementById('stat-pending').textContent = records.filter(r => r.status === 'รอตรวจสอบ').length;
-    document.getElementById('stat-abnormal').textContent = records.filter(r => r.meter_condition !== 'สภาพปกติ').length;
-    document.getElementById('stat-today').textContent = records.filter(r => r.recorded_date === todayStr).length;
-    clearFilters();
+// ─── DASHBOARD (Supabase) ─────────────────────────────────────────────────────
+async function renderDashboard() {
+    // Show loading state
+    ['stat-total', 'stat-pending', 'stat-abnormal', 'stat-today'].forEach(id => {
+        document.getElementById(id).textContent = '–';
+    });
+    document.getElementById('records-count-label').textContent = 'กำลังโหลด...';
+    document.getElementById('records-list').innerHTML = '<div class="loading-skeleton"><div class="skeleton-card"></div><div class="skeleton-card"></div><div class="skeleton-card"></div></div>';
+
+    try {
+        const todayISO = new Date().toISOString().slice(0, 10);
+
+        // Fetch stats and records in parallel
+        const [totalRes, pendingRes, abnormalRes, todayRes, recordsRes] = await Promise.all([
+            supabaseClient.from('meter_records').select('id', { count: 'exact', head: true }),
+            supabaseClient.from('meter_records').select('id', { count: 'exact', head: true }).eq('status', 'รอตรวจสอบ'),
+            supabaseClient.from('meter_records').select('id', { count: 'exact', head: true }).neq('meter_condition', 'สภาพปกติ'),
+            supabaseClient.from('meter_records').select('id', { count: 'exact', head: true }).gte('created_at', todayISO + 'T00:00:00').lte('created_at', todayISO + 'T23:59:59'),
+            supabaseClient.from('meter_records').select('*').order('created_at', { ascending: false }).limit(200)
+        ]);
+
+        document.getElementById('stat-total').textContent = totalRes.count ?? 0;
+        document.getElementById('stat-pending').textContent = pendingRes.count ?? 0;
+        document.getElementById('stat-abnormal').textContent = abnormalRes.count ?? 0;
+        document.getElementById('stat-today').textContent = todayRes.count ?? 0;
+
+        if (recordsRes.error) throw recordsRes.error;
+        _dashboardRecords = recordsRes.data || [];
+        clearFilters();
+    } catch (e) {
+        console.error('Dashboard load error:', e);
+        document.getElementById('records-list').innerHTML = '<div class="empty-state">❌ โหลดข้อมูลไม่สำเร็จ — กรุณาลองใหม่</div>';
+        document.getElementById('records-count-label').textContent = 'เกิดข้อผิดพลาด';
+    }
 }
 
 function applyFilters() {
@@ -312,7 +344,7 @@ function applyFilters() {
     const pQ = document.getElementById('filter-period').value;
     const cQ = document.getElementById('filter-condition').value;
     const iQ = document.getElementById('filter-inspector').value;
-    renderRecords(loadRecords().filter(r =>
+    renderRecords(_dashboardRecords.filter(r =>
         (!mQ || r.meter_id.toLowerCase().includes(mQ)) &&
         (!pQ || r.time_period === pQ) &&
         (!cQ || r.meter_condition === cQ) &&
@@ -322,10 +354,9 @@ function applyFilters() {
 
 function clearFilters() {
     ['filter-meter', 'filter-period', 'filter-condition', 'filter-inspector'].forEach(id => {
-        const el = document.getElementById(id);
-        if (el) el.value = '';
+        const el = document.getElementById(id); if (el) el.value = '';
     });
-    renderRecords(loadRecords());
+    renderRecords(_dashboardRecords);
 }
 
 function renderRecords(records) {
@@ -336,6 +367,7 @@ function renderRecords(records) {
         const pCls = r.time_period === 'รอบเช้า' ? 'badge-period-morning' : 'badge-period-evening';
         const sCls = r.status === 'ตรวจสอบแล้ว' ? 'badge-status-ok' : r.meter_condition !== 'สภาพปกติ' ? 'badge-status-warn' : 'badge-status-pending';
         const cCls = r.meter_condition === 'สภาพปกติ' ? 'record-condition-normal' : 'record-condition-warn';
+        const dateStr = r.created_at ? new Date(r.created_at).toLocaleString('th-TH', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
         return `<div class="record-card">
       <div class="record-top">
         <span class="record-meter-id">${r.meter_id}</span>
@@ -347,46 +379,62 @@ function renderRecords(records) {
       <div class="record-row"><span class="record-row-label">ค่าที่อ่านได้</span><span class="record-row-val">${r.reading_value} หน่วย</span></div>
       <div class="record-row"><span class="record-row-label">สภาพมิเตอร์</span><span class="record-row-val ${cCls}">${r.meter_condition}</span></div>
       <div class="record-row"><span class="record-row-label">ผู้บันทึก</span><span class="record-row-val">${r.inspector_name}</span></div>
-      <div class="record-row"><span class="record-row-label">วันที่</span><span class="record-row-val">${r.recorded_at}</span></div>
+      <div class="record-row"><span class="record-row-label">วันที่</span><span class="record-row-val">${dateStr}</span></div>
       ${r.notes ? `<div class="record-row"><span class="record-row-label">หมายเหตุ</span><span class="record-row-val">${r.notes}</span></div>` : ''}
     </div>`;
     }).join('');
 }
 
-// ─── EXCEL EXPORT ─────────────────────────────────────────────────────────────
-function exportExcel() {
-    const mQ = document.getElementById('filter-meter').value.trim().toLowerCase();
-    const pQ = document.getElementById('filter-period').value;
-    const cQ = document.getElementById('filter-condition').value;
-    const iQ = document.getElementById('filter-inspector').value;
-    let records = loadRecords();
-    if (mQ) records = records.filter(r => r.meter_id.toLowerCase().includes(mQ));
-    if (pQ) records = records.filter(r => r.time_period === pQ);
-    if (cQ) records = records.filter(r => r.meter_condition === cQ);
-    if (iQ) records = records.filter(r => r.inspector_name === iQ);
+// ─── EXCEL EXPORT (Supabase) ──────────────────────────────────────────────────
+async function exportExcel() {
+    const btn = document.querySelector('.btn-export-sm');
+    const origHTML = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '⏳ กำลังส่งออก...';
 
-    const rows = records.map((r, i) => ({
-        'ลำดับ': i + 1, 'เลขมิเตอร์': r.meter_id, 'ค่าที่อ่านได้': r.reading_value,
-        'สภาพมิเตอร์': r.meter_condition, 'ช่วงเวลา': r.time_period,
-        'วันที่บันทึก': r.recorded_at, 'ผู้บันทึก': r.inspector_name,
-        'หมายเหตุ': r.notes, 'สถานะ': r.status
-    }));
-    const wb = XLSX.utils.book_new();
-    const ws = XLSX.utils.json_to_sheet(rows);
-    ws['!cols'] = [{ wch: 6 }, { wch: 16 }, { wch: 16 }, { wch: 20 }, { wch: 12 }, { wch: 22 }, { wch: 16 }, { wch: 24 }, { wch: 14 }];
-    XLSX.utils.book_append_sheet(wb, ws, 'บันทึกมิเตอร์');
-    XLSX.writeFile(wb, `SmartMeter_${new Date().toLocaleDateString('th-TH').replace(/\//g, '-')}.xlsx`);
+    try {
+        // Apply current filters to exported data
+        const mQ = document.getElementById('filter-meter').value.trim().toLowerCase();
+        const pQ = document.getElementById('filter-period').value;
+        const cQ = document.getElementById('filter-condition').value;
+        const iQ = document.getElementById('filter-inspector').value;
+
+        let records = _dashboardRecords;
+        if (mQ) records = records.filter(r => r.meter_id.toLowerCase().includes(mQ));
+        if (pQ) records = records.filter(r => r.time_period === pQ);
+        if (cQ) records = records.filter(r => r.meter_condition === cQ);
+        if (iQ) records = records.filter(r => r.inspector_name === iQ);
+
+        const rows = records.map((r, i) => ({
+            'ลำดับ': i + 1,
+            'เลขมิเตอร์': r.meter_id,
+            'ค่าที่อ่านได้': r.reading_value,
+            'สภาพมิเตอร์': r.meter_condition,
+            'ช่วงเวลา': r.time_period,
+            'วันที่บันทึก': r.created_at ? new Date(r.created_at).toLocaleString('th-TH', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '',
+            'ผู้บันทึก': r.inspector_name,
+            'หมายเหตุ': r.notes,
+            'สถานะ': r.status,
+            'ลิงก์รูปภาพ': r.image_url || ''
+        }));
+        const wb = XLSX.utils.book_new();
+        const ws = XLSX.utils.json_to_sheet(rows);
+        ws['!cols'] = [{ wch: 6 }, { wch: 16 }, { wch: 16 }, { wch: 20 }, { wch: 12 }, { wch: 22 }, { wch: 16 }, { wch: 24 }, { wch: 14 }, { wch: 40 }];
+        XLSX.utils.book_append_sheet(wb, ws, 'บันทึกมิเตอร์');
+        XLSX.writeFile(wb, `SmartMeter_${new Date().toLocaleDateString('th-TH').replace(/\//g, '-')}.xlsx`);
+    } catch (e) {
+        console.error('Export error:', e);
+        showGlobalToast('❌ ส่งออกไฟล์ไม่สำเร็จ — กรุณาลองใหม่');
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = origHTML;
+    }
 }
 
 // ─── INIT ─────────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
-    purgeDemoData();
     updateHomeStats();
-    // Ensure only home is shown
-    document.querySelectorAll('.screen').forEach(s => {
-        s.style.display = '';
-        s.classList.remove('active');
-    });
+    document.querySelectorAll('.screen').forEach(s => { s.style.display = ''; s.classList.remove('active'); });
     const home = document.getElementById('screen-home');
     home.style.display = 'flex';
     home.classList.add('active');
